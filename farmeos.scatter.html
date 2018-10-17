@@ -1,0 +1,439 @@
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>FARMEOS挖矿</title>
+  <script src="https://cdn.jsdelivr.net/npm/eosjs@16.0.9/lib/eos.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/scatter-js@2.5.2/dist/scatter.min.js"></script>
+  <script>
+    var chainId = 'aca376f206b8fc25a6ed44dbdc66547c36c6c33e3a119ffbeaef943642f0e906';
+
+    var eos = null;
+    var state = 0;
+    var rollUnder = 0;
+    var betamount = '';
+    var referralsaccount = '';
+    var timeout = 0;
+    var memo = '';
+    var balance = -1;
+    var balanceUnder = 0;
+    var checkTokenQuantityTimeout = 2000;
+    var hasCPU = false;
+    var cpuAvailable = '';
+    var network = null;
+    var identity = null;
+    var cpuUnder = 0;
+
+    function createMemo() {
+      return `${referralsaccount == '' ? '0' : referralsaccount} 2 4`;
+    }
+
+    function bet() {
+      if (state == 0) {
+        log("已经停止");
+        return;
+      }
+      if (balance == -1) {
+        log("等待检测余额");
+        setTimeout(bet, 1000);
+        return;
+      }
+
+      checkInputs();
+
+      if (balanceUnder > 0 && balance <= balanceUnder) {
+        log("余额达到限制边界，已经停止");
+        return;
+      }
+
+      if (betamount == '') {
+        log('请输入下注金额');
+        return;
+      }
+
+      if (memo == '') {
+        log("请填写Memo");
+        setTimeout(bet, 1000);
+        return;
+      }
+
+      if (!hasCPU) {
+        log(`CPU资源不足${cpuAvailable}，等待CPU释放后继续`);
+        setTimeout(bet, 1000);
+        return;
+      }
+
+      if (identity == null) {
+        log("请登陆");
+        setTimeout(bet, 1000);
+        return;
+      }
+
+      var data = {
+        from: getAccountName(),
+        to: 'farmeosbank1',
+        quantity: betamount,
+        memo: memo == '' ? createMemo() : memo
+      };
+      log(new Date() + ' ' + JSON.stringify(data));
+      transfer(data.to, data.quantity, data.memo, function (trx) {
+        log(`${new Date()} 交易ID: ${trx.transaction_id}`);
+        if (timeout > 0) {
+          log(`${new Date()} 等待 ${timeout}ms`);
+          setTimeout(bet, timeout);
+        } else {
+          bet();
+        }
+      }, function (err) {
+        log(`${new Date()} 发现错误：${JSON.parse(err).error.details[0].message}`);
+        if (timeout > 0) {
+          log(`${new Date()} 等待 ${timeout}ms`);
+          setTimeout(bet, timeout);
+        } else {
+          bet();
+        }
+      });
+    }
+
+    function log(msg) {
+      var txtResults = document.getElementById('txtResults');
+      var html = txtResults.innerHTML;
+      var items = html == '' ? [] : html.split('\n');
+      var overflow = items.length - 100;
+      if (overflow > 0) {
+        items.splice(0, overflow);
+      }
+      items.push(msg);
+      txtResults.innerHTML = items.join('\n');
+      txtResults.scrollTop = txtResults.scrollHeight;
+    }
+
+    function checkoutNetworks() {
+      var httpEndpoint = document.getElementById('txtHttpEndpoint').value.split('://');
+      var host = httpEndpoint[1].split(':');
+
+      network = {
+        blockchain: 'eos',
+        host: host[0],
+        port: host.length > 1 ? host[0] : (httpEndpoint[0].toLowerCase() == 'https' ? 443 : 80),
+        chainId: chainId,
+        protocol: httpEndpoint[0],
+      };
+
+      log(`网络参数：${JSON.stringify(network)}`);
+    }
+
+    function checkInputs() {
+      betamount = document.getElementById('txtAmount').value;
+      timeout = new Number(document.getElementById('txtTimeout').value).valueOf();
+      balanceUnder = new Number(document.getElementById('txtBalanceUnder').value).valueOf();
+      memo = document.getElementById('txtMemo').value;
+      cpuUnder = new Number(document.getElementById('txtCPUUnder').value).valueOf();
+
+      if (isNaN(timeout)) {
+        timeout = 0;
+      }
+
+      if (isNaN(balanceUnder)) {
+        balanceUnder = 0;
+      }
+
+      if (isNaN(cpuUnder)) {
+        cpuUnder = 0;
+      }
+    }
+
+    function start() {
+      if (state == 1) {
+        return;
+      }
+
+      if (identity == null) {
+        alert("请登陆");
+        return;
+      }
+
+      checkInputs();
+
+      state = 1;
+      disableInputs(true);
+      document.getElementById('txtResults').innerHTML = '';
+      setTimeout(CheckAccount, 100);
+      setTimeout(bet, 1000);
+    }
+
+    function stop() {
+      state = 0;
+      disableInputs(false);
+    }
+
+    function disableInputs(disabled) {
+      document.getElementById('txtHttpEndpoint').disabled = disabled;
+      document.getElementById('txtAmount').disabled = disabled;
+      document.getElementById('txtBalanceUnder').disabled = disabled;
+      document.getElementById('txtMemo').disabled = disabled;
+      document.getElementById('txtTimeout').disabled = disabled;
+
+      document.getElementById('btnLogin').disabled = disabled;
+      document.getElementById('btnLogout').disabled = disabled;
+
+      document.getElementById('btnUpdateAmount1').disabled = disabled;
+      document.getElementById('btnUpdateAmount2').disabled = disabled;
+      document.getElementById('btnUpdateAmount3').disabled = disabled;
+      document.getElementById('btnUpdateAmount4').disabled = disabled;
+      document.getElementById('btnUpdateAmount5').disabled = disabled;
+      document.getElementById('btnUpdateAmount6').disabled = disabled;
+
+      document.getElementById('btnUpdateTimeout1').disabled = disabled;
+      document.getElementById('btnUpdateTimeout2').disabled = disabled;
+      document.getElementById('btnUpdateTimeout3').disabled = disabled;
+      document.getElementById('btnUpdateTimeout4').disabled = disabled;
+      document.getElementById('btnUpdateTimeout5').disabled = disabled;
+
+      document.getElementById('txtCPUUnder').disabled = disabled;
+    }
+
+    function lock() {
+      disableInputs(true);
+    }
+
+    function unlock() {
+      disableInputs(false);
+    }
+
+    function updateInputValue(id, value) {
+      document.getElementById(id).value = value;
+    }
+
+    function multiplyInputValue(id, factor, defaultValue, fixedNum, unit, min, max) {
+      var originalValue = document.getElementById(id).value.split(' ')[0];
+      originalValue = new Number(originalValue).valueOf();
+      if (isNaN(originalValue)) {
+        originalValue = defaultValue;
+      }
+      var factor = new Number(factor).valueOf();
+      if (isNaN(factor)) {
+        factor = 1;
+      }
+      var newValue = originalValue * factor;
+      if (min > 0 && newValue < min) {
+        newValue = min;
+      }
+      if (max > 0 && newValue > max) {
+        newValue = max;
+      }
+      newValue = new Number(newValue).toFixed(fixedNum);
+      if (unit != undefined && unit.length > 0) {
+        newValue = `${newValue} ${unit}`;
+      }
+      document.getElementById(id).value = newValue;
+    }
+
+    function getAccountName() {
+      return identity == null || identity.accounts == null || identity.accounts.length == 0 ? betaccount : identity.accounts[0].name;
+    }
+
+    function isRunning() {
+      return state == 1;
+    }
+
+    function CheckAccount() {
+      if (state == 0) {
+        return;
+      }
+
+      try {
+        eos.getAccount({ account_name: getAccountName() }).then(res => {
+          var cb = res.core_liquid_balance;
+          balance = res.length == 0 ? 0 : new Number(cb.split(' ')[0]).valueOf();
+          document.getElementById('lbBalance').innerText = cb;
+          var cl = res.cpu_limit;
+          cpuAvailable = document.getElementById('lbCPUAvailable').innerHTML = new Number((cl.available * 100 / cl.max)).toFixed(2) + '%';
+          hasCPU = cl.available > 0 && ((cl.available * 100 / cl.max) >= cpuUnder);
+          setTimeout(CheckAccount, 1000);
+        }).catch(err => {
+          log(`检查账号出错：${JSON.stringify(err)}`);
+          setTimeout(CheckAccount, 1000);
+        });
+      } catch (error) {
+        log(`检查账号出错：${JSON.stringify(error)}`);
+        setTimeout(CheckAccount, 1000);
+      }
+    }
+
+    function open(successCallback, errorCallbak) {
+      let that = this;
+      if (!hasScatter()) {
+        errorCallbak("scatter required");
+        return;
+      }
+      checkoutNetworks();
+      scatter.suggestNetwork(network).then(() => {
+        const requirements = { accounts: [network] };
+        scatter.getIdentity(requirements).then(
+          function (i) {
+            if (!i) {
+              return errorCallbak(null);
+            }
+            identity = i;
+            document.getElementById('lbUserName').innerHTML = identity.accounts[0].name;
+            eos = scatter.eos(network, Eos, { expireInSeconds: 60 }, "https");
+            successCallback();
+          }
+        ).catch(error => {
+          errorCallbak(error);
+        });
+      }).catch(error => {
+        errorCallbak(error);
+      });
+    }
+
+    function transfer(recipient, amount, memo, successCallback, errorCallback) {
+      let that = this;
+      if (that.identity == null) {
+        that.open(() => {
+          transfer(recipient, amount, memo, successCallback, errorCallback);
+        }, errorCallback);
+      } else {
+        const account = that.identity.accounts.find(x => x.blockchain === that.network.blockchain);
+        const transactionOptions = { authorization: [`${account.name}@${account.authority}`], broadcast: true, sign: true };
+        that.eos.transfer(account.name, recipient, amount, memo, transactionOptions).then(trx => {
+          successCallback(trx);
+        }).catch(error => {
+          errorCallback(error);
+        });
+      }
+    }
+
+    function login() {
+      if (!hasScatter()) {
+        alert('scatter required');
+        return;
+      }
+      scatter.connect('FARMEOSHELPER').then(connected => {
+        if (connected) {
+          open(function () {
+            document.getElementById('btnLogin').style.display = 'none';
+            document.getElementById('btnLogout').style.display = '';
+            log(`登陆成功：${JSON.stringify(identity)}`);
+          }, function (error) {
+            log(`登陆出错：${JSON.stringify(error)}，请关闭重新打开或者刷新本页面`);
+          });
+        } else {
+          log('未连接');
+        }
+      });
+    }
+
+    function logout() {
+      if (isRunning()) {
+        alert("请先停止脚本");
+        return;
+      }
+      if (identity) {
+        identity = null;
+        if (hasScatter()) {
+          scatter.forgetIdentity().then(() => {
+            document.getElementById('lbUserName').innerHTML = '';
+            document.getElementById('btnLogin').style.display = '';
+            document.getElementById('btnLogout').style.display = 'none';
+          });
+        }
+      }
+    }
+
+    function hasScatter() {
+      return scatter !== undefined;
+    }
+
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css">
+</head>
+
+<body>
+  <div class="container-fluid" style="padding-top: 5px;">
+    <div class="row">
+      <div class="col-sm-12 col-md-6">
+        <form>
+          <div class="form-group">
+            <label for="txtHttpEndpoint">节点</label>
+            <input type="text" class="form-control" id="txtHttpEndpoint" placeholder="输入节点" value="https://node.betdice.one">
+          </div>
+          <div class="form-group">
+            <label for="txtAccount">账号</label>
+            <span id="lbUserName"></span>
+          </div>
+          <div class="form-group">
+            <label for="txtAmount">下注</label>
+            <input type="text" class="form-control" id="txtAmount" placeholder="输入注数" value="0.5000 EOS">
+            <button type="button" class="btn btn-info btn-sm" id="btnUpdateAmount1" onclick="javascript:updateInputValue('0.5000 EOS');">0.5
+              EOS</button>
+            <button type="button" class="btn btn-info btn-sm" id="btnUpdateAmount2" onclick="javascript:updateInputValue('1.0000 EOS');">1
+              EOS</button>
+            <button type="button" class="btn btn-info btn-sm" id="btnUpdateAmount3" onclick="javascript:updateInputValue('5.0000 EOS');">5
+              EOS</button>
+            <button type="button" class="btn btn-info btn-sm" id="btnUpdateAmount4" onclick="javascript:updateInputValue('10.0000 EOS');">10
+              EOS</button>
+            <button type="button" class="btn btn-info btn-sm" id="btnUpdateAmount5" onclick="javascript:multiplyInputValue('txtAmount', 2, 0.5, 4, 'EOS', 0.5, 100);">X2
+              EOS</button>
+            <button type="button" class="btn btn-info btn-sm" id="btnUpdateAmount6" onclick="javascript:multiplyInputValue('txtAmount', 0.5, 0.5, 4, 'EOS', 0.5, 100);">1/2
+              EOS</button>
+          </div>
+          <div class="form-group">
+            <label for="txtBalanceUnder">余额下限</label>
+            <input type="text" class="form-control" id="txtBalanceUnder" aria-describedby="txtBalanceUnderHelp"
+              placeholder="输入边界" value="0">
+            <small id="txtBalanceUnderHelp" class="form-text text-muted">低于这个下限不再挖矿，用户CPU资源不能地址10%，低于此值时脚本会停止并等待，默认值0不作限制</small>
+          </div>
+          <div class="form-group">
+            <label for="txtCPUUnder">CPU限制(%)</label>
+            <input type="text" class="form-control" id="txtCPUUnder" aria-describedby="txtCPUUnderHelp" placeholder="输入边界"
+              value="10">
+            <small id="txtCPUUnderHelp" class="form-text text-muted">用户CPU资源不能地址低于%，低于此值时脚本会停止并等待，默认值0不作限制</small>
+          </div>
+          <div class="form-group">
+            <label for="txtMemo">Memo</label>
+            <input type="text" class="form-control" id="txtMemo" placeholder="Input Momo" value="winninetysix 2 4"
+              aria-describedby="txtMemoHelp">
+            <small id="txtMemoHelp" class="form-text text-muted">格式：“邀请人账号 2 4”或者“邀请人账号 1 97”，分别表示大于4或者小于97。</small>
+          </div>
+          <div class="form-group">
+            <label for="txtTimeout">频率</label>
+            <input type="text" class="form-control" id="txtTimeout" placeholder="Input txtTimeout" aria-describedby="txtTimeoutHelp"
+              value="800">
+            <button type="button" class="btn btn-info btn-sm" id="btnUpdateTimeout1" onclick="javascript:updateInputValue('txtTimeout', '100');">快</button>
+            <button type="button" class="btn btn-info btn-sm" id="btnUpdateTimeout2" onclick="javascript:updateInputValue('txtTimeout', '800');">中</button>
+            <button type="button" class="btn btn-info btn-sm" id="btnUpdateTimeout3" onclick="javascript:updateInputValue('txtTimeout', '1600');">慢</button>
+            <button type="button" class="btn btn-info btn-sm" id="btnUpdateTimeout4" onclick="javascript:multiplyInputValue('txtTimeout', 2, 1200, 0, '', 100, 0);">X2</button>
+            <button type="button" class="btn btn-info btn-sm" id="btnUpdateTimeout5" onclick="javascript:multiplyInputValue('txtTimeout', 0.5, 1200, 0, '', 100, 0);">1/2</button>
+            <small id="txtTimeoutHelp" class="form-text text-muted">频率，单位毫秒，1秒=1000毫秒，默认1200毫秒</small>
+          </div>
+          <div class="form-group">
+            <button type="button" class="btn btn-info btn-sm" id="btnLogin" onclick="javascript:login();">登陆</button>
+            <button type="button" class="btn btn-info btn-sm" style="display:none;" id="btnLogout" onclick="javascript:logout();">退出</button>
+            <button type="button" class="btn btn-primary btn-sm" id="btnStart" onclick="javascript:start();">开始</button>
+            <button type="button" class="btn btn-default btn-sm" id="btnStop" onclick="javascript:stop();">停止</button>
+            <button type="button" class="btn btn-default btn-sm" id="btnLock" onclick="javascript:lock();">锁屏</button>
+            <button type="button" class="btn btn-default btn-sm" id="btnUnlock" onclick="javascript:unlock();">解锁</button>
+          </div>
+          <div class="form-group">
+            页面脚本集成了Scatter插件，玩家登陆继续挖矿，更加安全可靠。可以往前GITHUB地址：<a href="" target="_blank">https://github.com/win96me/dicehelper.git</a> 下载离线版本
+          </div>
+        </form>
+      </div>
+      <div class="col-sm-12 col-md-6">
+        <form>
+          <div class="form-group">
+            <label for="txtResults">监视面板</label>
+            <div>当前余额：<span id="lbBalance"> EOS</span>，CPU可用百分比：<span id='lbCPUAvailable'>%</span></div>
+            <textarea id="txtResults" class="form-control" style="height:605px;" readonly="readonly"></textarea>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>
